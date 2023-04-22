@@ -52,19 +52,26 @@ class SrCNN(nn.Module):
 
 #training function
 #sets the network to train mode and runs the optimizer based on the loss from the forward pass
-def train(epoch,network,optimizer,train_loader,log_interval,train_losses, train_counter):
+def train(epoch,network,optimizer,train_loader,log_interval,train_losses, train_counter, device):
+    #network = network.to(device)
     network.train()
     #for each batch of our training data
     for batch_idx, (data,target) in enumerate(train_loader):
+        network.to(device)
         optimizer.zero_grad()
         #run data throuh the neural network
+        data = data.to(device)
         output = network(data)
+        #network = network.to('cpu')
+        output = output.to(device)
+        target = target.to(device)
         #calculate loss
         lossFn = nn.MSELoss()
         loss = lossFn(output, target)
         #change weights accordingly
         loss.backward()
         optimizer.step()
+
         #this stuff is just for logging the learning process and saving the model to disk
         if batch_idx % log_interval == 0:
             print(f"Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} ({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}")
@@ -76,16 +83,23 @@ def train(epoch,network,optimizer,train_loader,log_interval,train_losses, train_
 
 #test function
 # runs through test data with the network in eval mode (doesn't change weights)
-def test(network, test_loader,test_losses):
+def test(network, test_loader,test_losses,device):
+
     network.eval()
     test_loss = 0
     psnrList = []
     ssimList = []
     SSIM = im.SSIM(data_range = 1, kernel_size = 11)
     PSNR = PeakSignalNoiseRatio()
+
     with torch.no_grad():
         for data, target in test_loader:
+            #taking advanctage of cuda
+            data = data.to(device)
+            #run convolution
             output = network(data)
+            #move output to cpu
+            output = output.to('cpu')
             #Dong paper uses MSE for loss function
             lossFn = nn.MSELoss()
             test_loss += lossFn(output, target)
@@ -97,6 +111,7 @@ def test(network, test_loader,test_losses):
             #print(f"PSNR is {psnr} and SSIM is {SSIM.compute()}")
             psnrList.append(psnr.item())
             ssimList.append(SSIM.compute())
+
     test_loss /= len(test_loader.dataset)
     test_losses.append(test_loss)
     print(f"\nTest set: Avg. loss: {test_loss:.4f}, PSNR avg: {mean(psnrList)} SSIM avg: {mean(ssimList)} \n")
@@ -159,11 +174,16 @@ def main(argv):
     momentum = 0.5
     log_interval = 10
 
-    torch.backends.cudnn.enabled = False 
+    if (torch.cuda.is_available()):
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    print(device)
+
     torch.manual_seed(42)
 
-    training_images = srSet("./data/shortFileNamesTrain.csv","train")
-    test_images = srSet("./data/valid_filenames.csv","test")
+    training_images = srSet("./data/TrainSet.csv","train")
+    test_images = srSet("./data/TestSet.csv","test")
 
 
     #Loading Training data
@@ -173,7 +193,7 @@ def main(argv):
     #Loading Test data
     test_loader = torch.utils.data.DataLoader(test_images,batch_size = batch_size_test, shuffle = False)
 
-    print(f"loaded up the tweets. Train loader: {len(train_loader)} Test Loader: {len(test_loader)}\n")
+    print(f"loaded up the Images. Train loader: {len(train_loader)} Test Loader: {len(test_loader)}\n")
 
 
     #examples = enumerate(test_loader)
@@ -182,6 +202,7 @@ def main(argv):
 
     #initializing network and optimizer
     network = SrCNN()
+    network.to(device)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
 
     #saving accuracy data to these lists for plotting later
@@ -195,8 +216,8 @@ def main(argv):
     #Training and testing the datasets for n_epochs times
     #test(network, test_loader,test_losses)
     for epoch in range(1,n_epochs + 1):
-        train(epoch,network,optimizer,train_loader,log_interval,train_losses,train_counter)
-        test(network, test_loader,test_losses)
+        train(epoch, network,optimizer, train_loader, log_interval, train_losses, train_counter, device)
+        test(network, test_loader, test_losses, device)
 
     """
     #plotting stuff
@@ -204,7 +225,7 @@ def main(argv):
     """
 
     #saving model
-    modelSave(network, "SRCNN.pth")
+    modelSave(network, "SRCNN_Trained.pth")
     
     
 

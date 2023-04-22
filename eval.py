@@ -23,24 +23,27 @@ def showOutput(output, target, num):
     img2 = toImage(oArray)
     print("showing original")
     img.show()
+    
     print("showing prediction")
     img2.show()
-
+    img2.save("lionTest.png")
 
 
 def main(argv):
     #embedding for word data
     print("Loading model...")
 
-    print(torch.cuda.is_available())
-    print(torch.backends.cudnn.enabled)
-
+    if (torch.cuda.is_available()):
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    print(device)
 
     #loading model
     torch.backends.cudnn.enabled = False
     network = SrCNN()
 
-    network.load_state_dict(torch.load("SrCNN.pth"))
+    network.load_state_dict(torch.load("SRCNN_Trained.pth"))
     network.eval()
   
 

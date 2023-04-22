@@ -150,7 +150,7 @@ if __name__ == "__main__":
   #loading a test dataset to check for errors
   #tweet_data = OlidTrainingDataset("./data/olid_training_set_google_300.csv", vector_size=300)
   string = "test"
-  test = preProc("./data/valid_filenames.csv", string)
+  test = preProc("./data/testset_filenames.csv", string)
   #test = preProc("./data/test_filenames.csv")
   #print (test[0][1].shape)
 
