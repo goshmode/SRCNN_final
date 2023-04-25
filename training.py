@@ -5,50 +5,19 @@
 """
 
 import torch 
-from torchvision.transforms import ToPILImage, Normalize
+from torchvision.transforms import ToPILImage
 from torchmetrics import PeakSignalNoiseRatio
 import sys
 import matplotlib.pyplot as plt
-from PIL import Image
-import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from dataset import srSet
+from dataset import srSet, espcnSet
 import ignite.metrics as im
 from statistics import mean
-from model import SrCNN
+from model import SrCNN, ESPCN
+import csv
 
 
-
-
-#######  CLASS DEFINITIONS ################
-"""
-# NeuralNet is the class that outlines the neural network and processes input
-# passes input through the forward method and returns the probability of each class in a tensor
-class SrCNN(nn.Module):
-
-    #outlining the different layers in our neural network
-    def __init__(self):
-        super(SrCNN, self).__init__()
-
-        #use padding = 'same' for inputs of any size i think
-        #params are from the dong paper 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size = 9, padding = 4)
-        self.conv2 = nn.Conv2d(64, 32, kernel_size = 1, padding = 0)
-        self.conv3 = nn.Conv2d(32, 3, kernel_size = 5, padding = 2)
-
-
-    def forward(self, x):
-
-        x = torch.transpose(x,1,3)
-        #print(x.shape)
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = self.conv3(x)
-        x = torch.transpose(x,3,1)
-        return x
-"""
 
 #training function
 #sets the network to train mode and runs the optimizer based on the loss from the forward pass
@@ -80,18 +49,21 @@ def train(epoch,network,optimizer,train_loader,log_interval,train_losses, train_
             torch.save(network.state_dict(), 'SRCNN.pth')
             torch.save(optimizer.state_dict(), 'optimizer.pth')
 
-
+data_master = []
+globalCount = 0
 #test function
 # runs through test data with the network in eval mode (doesn't change weights)
-def test(network, test_loader,test_losses,device):
+def test(network, test_loader, test_losses, device):
 
     network.eval()
     test_loss = 0
     psnrList = []
     ssimList = []
     SSIM = im.SSIM(data_range = 1, kernel_size = 11)
+    SSIMBi = im.SSIM(data_range = 1, kernel_size = 11)
     PSNR = PeakSignalNoiseRatio()
-
+    SSIMBiList = []
+    PSNRList2 = []
     with torch.no_grad():
         for data, target in test_loader:
             #taking advanctage of cuda
@@ -101,17 +73,35 @@ def test(network, test_loader,test_losses,device):
             #move output to cpu
             output = output.to('cpu')
             #Dong paper uses MSE for loss function
+
+
             lossFn = nn.MSELoss()
             test_loss += lossFn(output, target)
-            psnr = PSNR(output, target)
+            
+            
             #getting right shape for SSIM
+            scaledData = torch.transpose(data,1,3)
+            scaledData2 = nn.functional.interpolate(scaledData, scale_factor = 3, mode = 'bicubic')
+            scaledData2 = scaledData2.to('cpu')
+            
             output2 = torch.transpose(output,1,3)
             target2 = torch.transpose(target,1,3)
+            print(scaledData2.shape, target2.shape)
+            psnr = PSNR(output, target)
+            psnr2 = PSNR(scaledData2,target2)
+
+            SSIMBi.update((scaledData2,target2))
             SSIM.update((output2, target2))
+
             #print(f"PSNR is {psnr} and SSIM is {SSIM.compute()}")
             psnrList.append(psnr.item())
             ssimList.append(SSIM.compute())
-
+            PSNRList2.append(psnr2.item())
+            SSIMBiList.append(SSIMBi.compute())
+    
+    data_master.append(mean(psnrList))
+    data_master.append(mean(ssimList))
+    print(f"Bicubic results were:  psnr: {mean(PSNRList2)}  SSIM: {mean(SSIMBiList)}")
     test_loss /= len(test_loader.dataset)
     test_losses.append(test_loss)
     print(f"\nTest set: Avg. loss: {test_loss:.4f}, PSNR avg: {mean(psnrList)} SSIM avg: {mean(ssimList)} \n")
@@ -167,12 +157,12 @@ def modelSave(model, name):
 def main(argv):
 
     #setting a few variables for how we train 
-    n_epochs = 30  #5 epochs shouldn't take too too long. each epoch runs through all of the training/test data
-    batch_size_train = 20
-    batch_size_test = 20
-    learning_rate = 0.0001
+    n_epochs = 200  #5 epochs shouldn't take too too long. each epoch runs through all of the training/test data
+    batch_size_train = 32
+    batch_size_test = 32
+    learning_rate = 0.0003
     momentum = 0.5
-    log_interval = 10
+    log_interval = 16
 
     if (torch.cuda.is_available()):
         device = torch.device('cuda')
@@ -185,6 +175,8 @@ def main(argv):
     training_images = srSet("./data/TrainSet.csv","train")
     test_images = srSet("./data/TestSet.csv","test")
 
+    training_images = espcnSet("./data/TrainSet.csv","train")
+    test_images = espcnSet("./data/TestSet.csv","test")
 
     #Loading Training data
     # The data needs to be passed to our neural network as a DataLoader class instance
@@ -201,7 +193,8 @@ def main(argv):
 
 
     #initializing network and optimizer
-    network = SrCNN()
+    #network = SrCNN()
+    network = ESPCN(3)
     network.to(device)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
 
@@ -214,18 +207,24 @@ def main(argv):
     ##### TRAINING/TEST LOOP ######
     
     #Training and testing the datasets for n_epochs times
-    #test(network, test_loader,test_losses)
+    test(network, test_loader,test_losses,device)
     for epoch in range(1,n_epochs + 1):
         train(epoch, network,optimizer, train_loader, log_interval, train_losses, train_counter, device)
         test(network, test_loader, test_losses, device)
 
-    """
+    
     #plotting stuff
-    plot(train_counter, train_losses, test_counter, test_losses)
-    """
+    #plot(train_counter, train_losses, test_counter, test_losses)
+    #print(data_master)
+    with open('ESPCN_stats', 'w') as f:
+        write = csv.writer(f)
+        for x in range(0,len(data_master) - 1, 2):
+            print(x)
+            write.writerow([data_master[x],data_master[x+1]])
+
 
     #saving model
-    modelSave(network, "SRCNN_Trained.pth")
+    modelSave(network, "ESPCN_Trained.pth")
     
     
 

@@ -50,6 +50,44 @@ class srSet(Dataset):
 
     
     return data, label
+  
+
+
+
+
+# espcnSet doesn't need to upsample the loRes images before adding to a tensor
+class espcnSet(Dataset):
+  def __init__(self, csv_file, type): 
+
+    self.csvIn = pd.read_csv(csv_file, sep="\n", header = None)
+    self.list = [x for x in self.csvIn[0].values]
+    self.sampleSize = 99
+    self.smallSize = 99//3
+    self.type = type
+
+  def __len__(self):
+    return len(self.list)
+
+  def __getitem__(self, idx):
+
+
+    hiFile = "./data/" + self.type + "/hiRes/" + str(self.list[idx])
+    loFile = "./data/" + self.type + "/loRes/" + str(self.list[idx])
+    #open image for this index in file list
+    hi = Image.open(hiFile)
+    lo = Image.open(loFile)
+    
+    
+	#normalizing into np arrays
+    hiMat = np.asarray(hi) / 255
+    loMat = np.asarray(lo) / 255
+    #values = np.array(image.getdata()).reshape(image.size[0], image.size[1], 3)
+
+	#converting to tensors
+    label = torch.Tensor(hiMat)
+    data = torch.Tensor(loMat)
+
+    return data, label
 
 # Preprocessing for image - saves hi and lo res images in their specific folders with matching filenames
 class preProc(Dataset):
@@ -96,15 +134,16 @@ class preProc(Dataset):
         sample.save(hiPath, 'PNG')
 
         #Dong paper mentions running inputs through a gaussian blur
-        small = sample.filter(ImageFilter.GaussianBlur(radius = 2))
+        #small = sample.filter(ImageFilter.GaussianBlur(radius = 2))
         #resize lo res to 3x smaller
-        small = small.resize((self.smallSize, self.smallSize))
+        small = sample.resize((self.smallSize, self.smallSize))
 
         small.save(loPath, 'PNG')
 
     return 0, 1
   
 
+#makes a dataset of length 1 from a passed filename with both hi and low res versions
 class Evaluation(Dataset):
   def __init__(self, filename, scale):
 
@@ -131,7 +170,50 @@ class Evaluation(Dataset):
 	#normalizing into np arrays
     loMat = np.asarray(lo) / 255
     hiMat = np.asarray(hi) / 255
+    
+    if (hiMat.shape[2] == 4) or (loMat.shape[2] == 4):
+      print("alpha")
+      loMat = loMat[:,:,:3]
+      hiMat = hiMat[:,:,:3]
 
+	#converting to tensors
+    label = torch.Tensor(hiMat)
+    data = torch.Tensor(loMat)
+
+    
+    return data, label
+
+
+#same as evaluation but with no upscaling before creating dataset
+class EvaluationESP(Dataset):
+  def __init__(self, filename, scale):
+
+    self.filename = filename
+    self.scale = scale
+
+  def __len__(self):
+    return 1
+
+  def __getitem__(self, idx):
+
+
+    hiFile = "C:/Users/HeyDude/Documents/CS5330/data/evaluation/" + str(self.filename) + "HI.png"
+    loFile = "C:/Users/HeyDude/Documents/CS5330/data/evaluation/" + str(self.filename) + "LOW.png"
+
+
+    #open image for this index in file list
+    lo = Image.open(loFile)
+    hi = Image.open(hiFile)
+    
+	#normalizing into np arrays
+    loMat = np.asarray(lo) / 255
+    hiMat = np.asarray(hi) / 255
+
+    if (hiMat.shape[2] == 4) or (loMat.shape[2] == 4):
+      print("alpha")
+      loMat = loMat[:,:,:3]
+      hiMat = hiMat[:,:,:3]
+    print(hiMat.shape)
     print(loMat.shape)
 
 	#converting to tensors
@@ -142,15 +224,13 @@ class Evaluation(Dataset):
     return data, label
 
 
-
-
-
 if __name__ == "__main__": 
 
   #loading a test dataset to check for errors
   #tweet_data = OlidTrainingDataset("./data/olid_training_set_google_300.csv", vector_size=300)
-  string = "test"
-  test = preProc("./data/testset_filenames.csv", string)
+  string = "train"
+  #test = preProc("./data/fullset_filenames.csv", string)
+  test = EvaluationESP("test", 3)
   #test = preProc("./data/test_filenames.csv")
   #print (test[0][1].shape)
 
