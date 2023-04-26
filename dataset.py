@@ -6,11 +6,10 @@ SRCNN Datasets & image preprocessing
 '''
 
 import torch
-import os
 import pandas as pd
 import numpy as np
 from random import randrange
-from PIL import Image, ImageFilter
+from PIL import Image
 from torch.utils.data import Dataset
 
 
@@ -53,8 +52,6 @@ class srSet(Dataset):
   
 
 
-
-
 # espcnSet doesn't need to upsample the loRes images before adding to a tensor
 class espcnSet(Dataset):
   def __init__(self, csv_file, type): 
@@ -89,7 +86,9 @@ class espcnSet(Dataset):
 
     return data, label
 
-# Preprocessing for image - saves hi and lo res images in their specific folders with matching filenames
+
+
+# Preprocessing for DIV2K images - saves hi and lo res images in their specific folders with matching filenames
 class preProc(Dataset):
   def __init__(self, csv_file, type): 
 
@@ -108,10 +107,6 @@ class preProc(Dataset):
     #open image for this index in file list
     image = Image.open(filename)
     
-    #values = np.array(image.getdata()).reshape(image.size[0], image.size[1], 3)
-
-    #for storing rotated images
-    #path = 'C:/Users/HeyDude/Documents/CS5330/data/hiRes/' + idx + ".png"
     x,y = image.size
 
     for i in range(8):
@@ -226,6 +221,7 @@ class EvaluationESP(Dataset):
 
 if __name__ == "__main__": 
 
+  """
   #loading a test dataset to check for errors
   #tweet_data = OlidTrainingDataset("./data/olid_training_set_google_300.csv", vector_size=300)
   string = "train"
@@ -236,6 +232,7 @@ if __name__ == "__main__":
 
   for i in range(len(test)):
     img = test[i]
+  """
 
 
   print("Loaded filenames.")

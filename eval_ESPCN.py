@@ -1,14 +1,14 @@
 """
-CS5100 Final Project
-Evaluation Mode for live input to CNN model
-
+James Marcel
+CS5330 Final Project
+Evaluation Mode for demo input to ESPCN model
 
 """
 
 import sys
 from dataset import EvaluationESP as eval
 import torch
-from model import SrCNN,ESPCN
+from model import ESPCN
 from torchvision.transforms import ToPILImage
 
 
@@ -32,6 +32,8 @@ def showOutput(output, target, num):
     print("saved output.")
 
 
+#loads ESPCN model, passes input file to dataset/model and then displays Hi res then Lo res.
+#saves low res version
 def main(argv):
     #embedding for word data
     print("Loading model...")
@@ -42,14 +44,16 @@ def main(argv):
         device = torch.device('cpu')
     print(device)
 
-    #loading model
+    #loading model - ESPCN takes a scale factor (trained on 3) as a param
     torch.backends.cudnn.enabled = False
     network = ESPCN(3)
 
     network.load_state_dict(torch.load("ESPCN_Trained.pth"))
     network.eval()
   
-    newData = eval("screen", 2)
+    #### FILENAME assumes there are two files, *LOW.png and *HI.png.  ex. screenLOW.png screenHI.png
+    #### should also be in a folder called 'data/evaluation/'
+    newData = eval("basket", 2)
 
     #loading dataset for use with loaded model
     eval_loader = torch.utils.data.DataLoader(newData, batch_size = 1, shuffle = False)
@@ -61,8 +65,8 @@ def main(argv):
     #xexample_data now holds the feature vector/label
     output = network(example_data)
 
-    print(output[0].shape)
-    print(example_targets[0].shape)
+    #print(output[0].shape)
+    #print(example_targets[0].shape)
 
     showOutput(output, example_targets, 0)
 

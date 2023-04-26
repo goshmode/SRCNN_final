@@ -1,7 +1,7 @@
 """
 James Marcel
 CS5330 - FInal Project
-srCNN model
+srCNN and ESPCN models
 """
 
 import torch
@@ -9,7 +9,7 @@ from torch import nn
 import torch.nn.functional as F
 
 # Model proposed by Dong et al.
-# Takes low-res image scaled up (bicubic) to hi-res size and learns based on that 
+# Takes low-res image scaled up (bicubic) to hi-res size and learnsin HR space
 class SrCNN(nn.Module):
 
     #outlining the different layers in our neural network
@@ -39,11 +39,10 @@ class SrCNN(nn.Module):
 
 
 # model proposed by Shi et al
-# takes scaled down input and learns upscaling filter directly
+# takes scaled down input and learns upscaling filter directly from LR space
 # requires a scaling factor (3 is used for training, but can be more for eval)
 class ESPCN(nn.Module):
 
-    #outlining the different layers in our neural network
     def __init__(self, scale):
         super(ESPCN, self).__init__()
         self.upscaling = scale
@@ -51,13 +50,13 @@ class ESPCN(nn.Module):
         #params are from the dong paper - 64 layers for 1st conv, then 32
         self.conv1 = nn.Conv2d(3, 64, kernel_size = 9, stride = 1,padding = 'same')
         self.conv2 = nn.Conv2d(64, 32, kernel_size = 1, stride = 1, padding = 'same')
+        #last conv layer's output channels are calculated from the scale factor
         self.out = int(3 * (self.upscaling ** 2))
-
         self.conv3 = nn.Conv2d(32, self.out, kernel_size = 5, stride = 1, padding = 'same')
 
         #learned upsampling layer
         self.subPix = nn.PixelShuffle(self.upscaling)
-        #adjusted scale for input to SubPix
+
         
 
     def forward(self, x):
@@ -68,7 +67,7 @@ class ESPCN(nn.Module):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = self.conv3(x)
-        #pixel shuffle learned upsampling
+        #pixel shuffle learned upsamplings
         x = self.subPix(x)
         #clamping values between 0 and 1
         x = torch.clamp_(x, 0.0, 1.0)

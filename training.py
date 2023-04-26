@@ -1,7 +1,8 @@
 """ James Marcel
     CS5330 Final Project
 
-    SRCNN - Super-resolution model
+    Single Image Super-Resolution using CNN. 
+    Training/validation structure for SRCNN and ESPCN.
 """
 
 import torch 
@@ -20,9 +21,8 @@ import csv
 
 
 #training function
-#sets the network to train mode and runs the optimizer based on the loss from the forward pass
+#sets the network to train mode and runs the optimizer based on the MSE loss from the forward pass
 def train(epoch,network,optimizer,train_loader,log_interval,train_losses, train_counter, device):
-    #network = network.to(device)
     network.train()
     #for each batch of our training data
     for batch_idx, (data,target) in enumerate(train_loader):
@@ -34,20 +34,21 @@ def train(epoch,network,optimizer,train_loader,log_interval,train_losses, train_
         #network = network.to('cpu')
         output = output.to(device)
         target = target.to(device)
-        #calculate loss
+        #calculate loss (MSE)
         lossFn = nn.MSELoss()
         loss = lossFn(output, target)
         #change weights accordingly
         loss.backward()
         optimizer.step()
-
         #this stuff is just for logging the learning process and saving the model to disk
         if batch_idx % log_interval == 0:
             print(f"Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)} ({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}")
             train_losses.append(loss.item())
             train_counter.append((batch_idx*64) + ((epoch-1) * len(train_loader.dataset)))
+            #saving states of network
             torch.save(network.state_dict(), 'SRCNN.pth')
             torch.save(optimizer.state_dict(), 'optimizer.pth')
+
 
 data_master = []
 globalCount = 0
@@ -57,6 +58,8 @@ def test(network, test_loader, test_losses, device):
 
     network.eval()
     test_loss = 0
+
+    #for validation set stats
     psnrList = []
     ssimList = []
     SSIM = im.SSIM(data_range = 1, kernel_size = 11)
@@ -64,23 +67,25 @@ def test(network, test_loader, test_losses, device):
     PSNR = PeakSignalNoiseRatio()
     SSIMBiList = []
     PSNRList2 = []
+
+    #test loop
     with torch.no_grad():
         for data, target in test_loader:
-            #taking advanctage of cuda
+            #taking advantage of cuda
             data = data.to(device)
             #run convolution
             output = network(data)
             #move output to cpu
             output = output.to('cpu')
+
             #Dong paper uses MSE for loss function
-
-
             lossFn = nn.MSELoss()
             test_loss += lossFn(output, target)
             
-            
             #getting right shape for SSIM
             scaledData = torch.transpose(data,1,3)
+
+            #for calculating PSNR and SSIM on bicubic interpolation
             scaledData2 = nn.functional.interpolate(scaledData, scale_factor = 3, mode = 'bicubic')
             scaledData2 = scaledData2.to('cpu')
             
@@ -93,6 +98,7 @@ def test(network, test_loader, test_losses, device):
             SSIMBi.update((scaledData2,target2))
             SSIM.update((output2, target2))
 
+            #storing some stats. 
             #print(f"PSNR is {psnr} and SSIM is {SSIM.compute()}")
             psnrList.append(psnr.item())
             ssimList.append(SSIM.compute())
@@ -105,32 +111,8 @@ def test(network, test_loader, test_losses, device):
     test_loss /= len(test_loader.dataset)
     test_losses.append(test_loss)
     print(f"\nTest set: Avg. loss: {test_loss:.4f}, PSNR avg: {mean(psnrList)} SSIM avg: {mean(ssimList)} \n")
-
-
-#plot test images
-def testPlot(example_data, example_targets):
-    fig = plt.figure()
-    for i in range(6):
-        plt.subplot(2,3,i+1)
-        plt.tight_layout()
-        plt.imshow(example_data[i][0], cmap = 'gray', interpolation = 'none')
-        plt.title(f"Ground Truth: {example_targets[i]}")
-        plt.xticks([])
-        plt.yticks([])
-    plt.show()
-
-
-#plotting model performance
-def plot(train_counter, train_losses, test_counter, test_losses):
-    fig = plt.figure()
-    plt.plot(train_counter, train_losses, color = "green")
-    print(len(test_counter), len(test_losses))
-    plt.scatter(test_counter, test_losses, color = "blue")
-    plt.legend(["Train Loss", "Test Loss"], loc = "upper right")
-    plt.xlabel("Number of Training Examples Seen")
-    plt.ylabel("Negative Log Likelihood Loss")
-    plt.show()
-
+    #returning loss to decide when to stop training
+    return test_loss
 
 
 #displaying output images
@@ -172,6 +154,7 @@ def main(argv):
 
     torch.manual_seed(42)
 
+    #loading data to datasets
     training_images = srSet("./data/TrainSet.csv","train")
     test_images = srSet("./data/TestSet.csv","test")
 
@@ -188,14 +171,11 @@ def main(argv):
     print(f"loaded up the Images. Train loader: {len(train_loader)} Test Loader: {len(test_loader)}\n")
 
 
-    #examples = enumerate(test_loader)
-    #batch, (example_data, example_targets) = next(examples)
-
-
-    #initializing network and optimizer
+    #initializing network and optimizer - un/comment to change which model to train
     #network = SrCNN()
     network = ESPCN(3)
     network.to(device)
+    #used Adam optimizer
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
 
     #saving accuracy data to these lists for plotting later
@@ -213,9 +193,6 @@ def main(argv):
         test(network, test_loader, test_losses, device)
 
     
-    #plotting stuff
-    #plot(train_counter, train_losses, test_counter, test_losses)
-    #print(data_master)
     with open('ESPCN_stats', 'w') as f:
         write = csv.writer(f)
         for x in range(0,len(data_master) - 1, 2):
